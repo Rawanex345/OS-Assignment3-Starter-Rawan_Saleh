@@ -44,29 +44,40 @@ class SharedResources {
     
     // Method to increment context switch counter
     public static void incrementContextSwitch() {
-        // TODO: Protect this critical section with a lock
-        // RACE CONDITION: Multiple threads might read and write simultaneously!
-        contextSwitchCount++;
-    }
+      counterLock.lock();
+        try {
+            contextSwitchCount++;
+        } finally {
+            counterLock.unlock();
+        }}
     
     // Method to increment completed process counter
     public static void incrementCompletedProcess() {
-        // TODO: Protect this critical section with a lock
-        completedProcessCount++;
-    }
+      counterLock.lock();
+        try {
+            completedProcessCount++;
+        } finally {
+            counterLock.unlock();
+        }}
     
     // Method to add waiting time
     public static void addWaitingTime(long time) {
-        // TODO: Protect this critical section with a lock
-        totalWaitingTime += time;
+     counterLock.lock();
+        try {
+            totalWaitingTime += time;
+        } finally {
+            counterLock.unlock();
+        }
     }
     
     // Method to log execution
     public static void logExecution(String message) {
-        // TODO: Protect this critical section with a lock
-        // RACE CONDITION: ArrayList is not thread-safe!
-        executionLog.add(message);
-    }
+     logLock.lock();
+        try {
+            executionLog.add(message);
+        } finally {
+            logLock.unlock();
+        }
 }
 
 // Class representing a process that implements Runnable to be run by a thread
