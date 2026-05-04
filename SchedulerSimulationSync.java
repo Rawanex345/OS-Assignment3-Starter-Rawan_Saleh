@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Random;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.Semaphore;
 
 // ANSI Color Codes for enhanced terminal output
 class Colors {
@@ -25,44 +27,38 @@ class Colors {
     public static final String BRIGHT_GREEN = "\u001B[92m";
 }
 
-// ⚠️ SHARED RESOURCES - These need synchronization! ⚠️
+// SHARED RESOURCES - These need synchronization!
 class SharedResources {
-    // TODO: Students will add synchronization mechanisms here
-    // HINT: Use ReentrantLock for mutual exclusion
-    // HINT: Use Semaphore for limiting concurrent access
+    public static int contextSwitchCount = 0;
+    public static int completedProcessCount = 0;
+    public static long totalWaitingTime = 0;
+    public static List<String> executionLog = new ArrayList<>();
     
-    public static int contextSwitchCount = 0;      // Shared counter - NEEDS PROTECTION!
-    public static int completedProcessCount = 0;   // Shared counter - NEEDS PROTECTION!
-    public static long totalWaitingTime = 0;       // Shared accumulator - NEEDS PROTECTION!
-    public static List<String> executionLog = new ArrayList<>();  // Shared list - NEEDS PROTECTION!
+    // Locks for synchronization
+    private static final ReentrantLock counterLock = new ReentrantLock();
+    private static final ReentrantLock logLock = new ReentrantLock();
+    private static final Semaphore cpuSemaphore = new Semaphore(1);
     
-    // TODO #1: Add a ReentrantLock(s) here to protect critical sections
-    // Example: public static final ReentrantLock lock = new ReentrantLock();
-    
-    // TODO #2: Add a Semaphore to limit concurrent process execution
-    // Example: public static final Semaphore cpuSemaphore = new Semaphore(1);
-    
-    // Method to increment context switch counter
     public static void incrementContextSwitch() {
-      counterLock.lock();
+        counterLock.lock();
         try {
             contextSwitchCount++;
         } finally {
             counterLock.unlock();
-        }}
+        }
+    }
     
-    // Method to increment completed process counter
     public static void incrementCompletedProcess() {
-      counterLock.lock();
+        counterLock.lock();
         try {
             completedProcessCount++;
         } finally {
             counterLock.unlock();
-        }}
+        }
+    }
     
-    // Method to add waiting time
     public static void addWaitingTime(long time) {
-     counterLock.lock();
+        counterLock.lock();
         try {
             totalWaitingTime += time;
         } finally {
@@ -70,14 +66,18 @@ class SharedResources {
         }
     }
     
-    // Method to log execution
     public static void logExecution(String message) {
-     logLock.lock();
+        logLock.lock();
         try {
             executionLog.add(message);
         } finally {
             logLock.unlock();
         }
+    }
+    
+    public static Semaphore getCpuSemaphore() {
+        return cpuSemaphore;
+    }
 }
 
 // Class representing a process that implements Runnable to be run by a thread
@@ -89,7 +89,7 @@ class Process implements Runnable {
     private long creationTime;
     private long startTime;
     private long completionTime;
-    private int priority;  // From Assignment 1
+    private int priority;
     
     public Process(String name, int burstTime, int timeQuantum, int priority) {
         this.name = name;
@@ -103,14 +103,13 @@ class Process implements Runnable {
     
     @Override
     public void run() {
-            Semaphore cpuSemaphore = SharedResources.getCpuSemaphore();
-
+        Semaphore cpuSemaphore = SharedResources.getCpuSemaphore();
         try {
+            cpuSemaphore.acquire();
             if (startTime == -1) {
                 startTime = System.currentTimeMillis();
             }
             
-            // Increment context switch counter
             SharedResources.incrementContextSwitch();
             
             int runTime = Math.min(timeQuantum, remainingTime);
@@ -119,7 +118,6 @@ class Process implements Runnable {
             String message = "  ▶ " + name + " (Priority: " + priority + ") executing quantum [" + runTime + "ms]";
             System.out.println(Colors.BRIGHT_GREEN + message + Colors.RESET);
             
-            // Log execution
             SharedResources.logExecution(name + " started quantum execution");
             
             try {
@@ -164,9 +162,10 @@ class Process implements Runnable {
             }
             System.out.println();
             
+        } catch (InterruptedException e) {
+            System.out.println(Colors.RED + "  ✗ " + name + " was interrupted." + Colors.RESET);
         } finally {
-            // TODO #4: Release CPU semaphore here
-            // Always release in finally block to prevent deadlocks!
+            cpuSemaphore.release();
         }
     }
     
@@ -185,8 +184,9 @@ class Process implements Runnable {
     }
     
     public void runToCompletion() {
-        // TODO: Similar synchronization needed here
+        Semaphore cpuSemaphore = SharedResources.getCpuSemaphore();
         try {
+            cpuSemaphore.acquire(); 
             System.out.println(Colors.BRIGHT_CYAN + "  ⚡ " + Colors.BOLD + Colors.CYAN + name + 
                               Colors.RESET + Colors.BRIGHT_CYAN + " is the last process, running to completion" + 
                               Colors.RESET + " [" + remainingTime + "ms]");
@@ -203,6 +203,8 @@ class Process implements Runnable {
             System.out.println();
         } catch (InterruptedException e) {
             System.out.println(Colors.RED + "  ✗ " + name + " was interrupted." + Colors.RESET);
+        } finally {
+            cpuSemaphore.release(); 
         }
     }
     
@@ -236,8 +238,8 @@ class Process implements Runnable {
 
 public class SchedulerSimulationSync {
     public static void main(String[] args) {
-        // ⚠️ IMPORTANT: Put your student ID here
-         int studentID = 444052889; 
+        // IMPORTANT: Put your student ID here
+        int studentID = 444052889;  // CHANGE THIS TO YOUR ACTUAL STUDENT ID
         
         Random random = new Random(studentID);
         
@@ -282,7 +284,7 @@ public class SchedulerSimulationSync {
         // Create processes with priorities
         for (int i = 1; i <= numProcesses; i++) {
             int burstTime = timeQuantum/2 + random.nextInt(2 * timeQuantum + 1);
-            int priority = 1 + random.nextInt(5);  // Priority between 1 and 5
+            int priority = 1 + random.nextInt(5);
             
             Process process = new Process("P" + i, burstTime, timeQuantum, priority);
             allProcesses.add(process);
